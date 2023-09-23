@@ -3,111 +3,67 @@
  * Name:  eVTOLClass.h
  * Description:  Includes eVTOL class definition.
  * Revision:     Date:           Reason												Author
- * 1.0           Sep 16, 2023    Original											Chris Wang
+ * 1.0           Sep. 16, 2023   Original											Chris Wang
  *								 eVTOL, Request and Report class definition
+ * 1.1           Sep. 22, 2023   Move "vehicleToDeploy" to here with documented.    Chris Wang
  */
 //#include <iostream>
 //using namespace std;
 
-#define SIMULATION_HOURS 3
+#define SIMULATION_HOURS 6
 #define MINUTES_PER_HOUR 60
 #define SECONDS_PER_MINUTE 60
 enum eVTOLChargeMutex { eVTOL_NO_CHARGE, eVTOL_IN_CHARGING, eVTOL_FULL_CHARGED};
-enum eVTOLCCompany { ALPHA_COMPANY, BRAVO_COMPANY, CHARLIE_COMPANY, DELTA_COMPANY, ECHO_COMPANY, MAX_COMPANIES};
+enum eVTOLCompany { ALPHA_COMPANY, BRAVO_COMPANY, CHARLIE_COMPANY, DELTA_COMPANY, ECHO_COMPANY, MAX_COMPANIES};
+enum eVTOLDeployReady { NOT_READY, IN_DEPLOY, IN_CHARGING, READY_TO_DEPLOY};
+
 class eVTOL {
 public:
+	int readDeployStatus() { return vehicleReadyToDeploy;  }
+	void setDeployStatus(int status) { vehicleReadyToDeploy = status;  }
 	bool batteryChargeFull(int chargeTime) {
 		return (chargeTime >= (int)(timeToChargeInHour * MINUTES_PER_HOUR * SECONDS_PER_MINUTE)) ? true : false;
 	}
 	bool flyingTimeReached(int flyingTime) {
-		return ((float)cruiseSpeedMilesPerHour * eneryUseKWhPerMile * ((float)flyingTime/MINUTES_PER_HOUR/SECONDS_PER_MINUTE) >= (float)batteryCapacityKWh) ? true : false;
+		return ((((float)cruiseSpeedMilesPerHour*flyingTime/ MINUTES_PER_HOUR /SECONDS_PER_MINUTE) * eneryUseKWhPerMile) >= (float)batteryCapacityKWh) ? true : false;
 	}
 	
 	string readCompanyName() { return name; }
 	int readCruiseSpeedMilesPerHour() { return cruiseSpeedMilesPerHour;  }
-	eVTOL(int company, string sname, int cruiseSpeedMPH, int batteryCapKWh, float timeToChargH, float engeryKWhPerMile, int maxPassenger, float probFaultPerHour) {
-
+	int readMaxPassengers() { return maxPassengers;  }
+	eVTOL(int readyToDeploy, int company, string sname, int cruiseSpeedMPH, int batteryCapKWh, float timeToChargH, float engeryKWhPerMile, int maxPassenger, float probFaultPerHour) {
+		vehicleReadyToDeploy = readyToDeploy;
 		eVTOLCompany = company;
 		name = sname;
 		cruiseSpeedMilesPerHour = cruiseSpeedMPH;
 		batteryCapacityKWh = batteryCapKWh;
 		timeToChargeInHour = timeToChargH;
 		eneryUseKWhPerMile = engeryKWhPerMile;
-		maxPassergers = maxPassenger;
+		maxPassengers = maxPassenger;
 		probabilityOfFaultPerHour = probFaultPerHour;
 	}
 	~eVTOL() { };
 
+
 private:
+	// Total one each company's eVTOL in simulation, assume each vehicle is pre-charged.
+	// This state machine is eVTOL readiness state machine, it interacts with Request ticket.
+	// 1. NOT_READY -- not ready, and not charged
+	// 2. IN_DEPLOY -- in flying
+	// 3. IN_CHARGING -- previous flight done, back to charger if available; otherwise, this request stays in ACTIVE_REQ and IN_CHARGING states
+	//                   if charger is available, it sets to ACTIVE_CHARGING and IN_CHARGING states
+	// 4. READY_TO_DEPLOY -- Initially each vehicle is assumed pre-charged and READY_TO_FLY, later, be set to this state again when this vehicle is charged again.
+	//         `
+	int vehicleReadyToDeploy;
+
 	int eVTOLCompany;
 	string name;
 	int cruiseSpeedMilesPerHour;
 	int batteryCapacityKWh;  // battery capacity Kilo Watt Hour
 	float timeToChargeInHour;
 	float eneryUseKWhPerMile; 
-	int maxPassergers;
+	int maxPassengers;
 	float probabilityOfFaultPerHour;
 
 };
 
-enum REUEST_STATUS { INACTIVE_REQ, ACTIVE_REQ, ACTIVE_AND_CHARGING, ACTIVE_CHARGED_REQ, ACTIVE_FLYING_REQ, DONE_REQ, PROCESSED_REQ};
-class eVTOLRequest {
-public:
-	
-	void clearChargeTime() { chargeTime = 0;  }
-	int readChargeTime() { return chargeTime;  }
-	void incrementChargeTimeOneTick() { chargeTime += 1; }
-
-	int readReqStatus() { return active;  }
-	void setReqStatus(int value) { active = value; }
-
-	void setCompany(int val ) { company = val; }
-	int readCompany() { return company; }
-	string readCompanyName() { return rEVTOL->readCompanyName(); }
-
-	int readFlyingTime() { return flyingTime; }
-	void incrementFlightTimeOneTick() { flyingTime += 1; }
-
-	int readFlyingMiles() { return flyingMiles; }
-	void setFlyingMiles(int miles) { flyingMiles = miles;  }
-
-	void setEVTOLptr(class eVTOL* reqEVTOL) { rEVTOL = reqEVTOL; }
-	class eVTOL* readEVTOLPtr() { return rEVTOL; }
-	void setDCChargerPtr(class DCFastCharger* charger) { dcCharger = charger;  }
-	class DCFastCharger* readDCChargerPtr() { return dcCharger;  }
-	
-private:
-	int active;  // Is this request active?
-	int chargeTime;   // how much charging time elapse
-	int company;      // which eVTOL type
-	int flyingTime;   // how much flying time elapse
-	int flyingMiles;  // how much flying miles
-	class eVTOL* rEVTOL;  // assoicated eVTOL object pointer
-	class DCFastCharger* dcCharger;  // assoicated DCCharger object pointer
-};
-
-// TODO --move public data to private in next rev
-class eVTOLReport {
-public:
-	int company;  // company type
-	int totalFlyTime; // fly time
-	int totalFlyMiles;  // fly miles
-	int totalChargeTime;  // charge time
-	int totalFaults;      // total faults
-	int totalPassengerMiles;  // total passenger miles
-	int totalDoneReq;		  // total done request
-
-	eVTOLReport(int rcompany, int flytime, int flymiles, int chargetime, int faults, int passengerMiles, int donereq) {
-		company = rcompany;
-		totalFlyTime = flytime;
-		totalFlyMiles = flymiles;
-		totalChargeTime = chargetime;
-		totalFaults = faults;
-		totalPassengerMiles = passengerMiles;
-		totalDoneReq = donereq;
-	}
-
-	~eVTOLReport() {};
-private:
-
-};
