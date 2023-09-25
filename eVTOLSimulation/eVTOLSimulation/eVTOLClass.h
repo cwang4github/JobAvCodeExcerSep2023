@@ -6,20 +6,22 @@
  * 1.0           Sep. 16, 2023   Original											Chris Wang
  *								 eVTOL, Request and Report class definition
  * 1.1           Sep. 22, 2023   Move "vehicleToDeploy" to here with documented.    Chris Wang
+ * 1.2           Sep. 24  2023   Delet "eVTOLChargerMutex" enum						Chris Wang
  */
 //#include <iostream>
 //using namespace std;
 
-#define SIMULATION_HOURS 6
+#define SIMULATION_HOURS 3
 #define MINUTES_PER_HOUR 60
 #define SECONDS_PER_MINUTE 60
-enum eVTOLChargeMutex { eVTOL_NO_CHARGE, eVTOL_IN_CHARGING, eVTOL_FULL_CHARGED};
 enum eVTOLCompany { ALPHA_COMPANY, BRAVO_COMPANY, CHARLIE_COMPANY, DELTA_COMPANY, ECHO_COMPANY, MAX_COMPANIES};
 enum eVTOLDeployReady { NOT_READY, IN_DEPLOY, IN_CHARGING, READY_TO_DEPLOY};
+
 
 class eVTOL {
 public:
 	int readDeployStatus() { return vehicleReadyToDeploy;  }
+
 	void setDeployStatus(int status) { vehicleReadyToDeploy = status;  }
 	bool batteryChargeFull(int chargeTime) {
 		return (chargeTime >= (int)(timeToChargeInHour * MINUTES_PER_HOUR * SECONDS_PER_MINUTE)) ? true : false;

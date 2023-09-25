@@ -63,6 +63,9 @@ public:
 	int totalPassengerMiles;  // total passenger miles
 	int totalDoneReq;		  // total done request
 
+	template <typename T> 
+	T addTwo(T a, T b) { return (a + b); }
+
 	eVTOLReport(int rcompany, int flytime, int flymiles, int chargetime, int faults, int passengerMiles, int donereq) {
 		company = rcompany;
 		totalFlyTime = flytime;

@@ -14,16 +14,18 @@
  *				 6.  DONE_REQ:  this Request ticket marked as DONE_REQ and accumulated the data to REPORT class, 
  *					 and it's associated eVTOL vechile's "vehicleReadyToDeploy" as "NOT_READY". This request ticket would not back to active again.			 
  *               
- * Revision:     Date:           Reason												Author
- * 1.0           Sep 16, 2023    Original											Chris Wang
+ * Revision:     Date:           Reason												                     Author
+ * 1.0           Sep 16, 2023    Original											                     Chris Wang
  * 1.1			 Sep 22, 2023    Move request ticket and report class definitions
  *								 to FlightTicket.h
  *								 Move "vehicleReadyToDeploy" array to a eVTOLClass's 
  *								 public member. It is assumed each eVTOL was charged
  *								 full and be fully charged before deploying.
  *								 Delete un-necessary comments.
+ * 1.2			 Sep 24, 2023    Add in "evaluateStationTransion" routine in eVTOLSimulation.cpp
  *								 
  */
+
 using namespace std;
 #include <fstream>
 #include <iostream>
@@ -37,6 +39,7 @@ using namespace std;
 #include <ctime>
 #include <iomanip>
 #include <string>
+#include <map>
 
 using namespace std::this_thread;     // sleep_for, sleep_until
 using namespace std::chrono_literals; // ns, us, ms, s, h, etc.
@@ -153,6 +156,114 @@ int reportStatistic(ofstream *outfile)
 }
 
 
+int evaluateStateTransistion(ofstream *outfile)
+{
+	// loop for every second till 3 hours simulation time
+	int tick;
+
+	class eVTOLReport* evtolReportPtr = NULL;
+	class eVTOLRequest* newReqPtr = NULL;
+	class DCFastCharger* chargerPtr = NULL;
+	class eVTOL* localEVTOLPtr = NULL;
+	for (tick = 0; tick < (SIMULATION_HOURS * MINUTES_PER_HOUR * SECONDS_PER_MINUTE); tick++) {
+
+		for (int i = 0; i < MAX_eVTOLs; i++) {
+			newReqPtr = &eVTOLReq[i];
+			switch (newReqPtr->readReqStatus()) {
+			case INACTIVE_REQ:
+				break;
+
+			case ACTIVE_REQ:
+				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) {
+					newReqPtr->setReqStatus(ACTIVE_CHARGED_REQ);
+					*outfile << newReqPtr->readCompanyName() << " Precharged ready to fly\n";
+					// When vehicle is charged, go to ACTIVE_CHARGED_REQ state immediately.
+					goto processVehicleReadyToDeploy;
+				}
+				else if (newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_DEPLOY || newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_CHARGING) {  // do nothing if was in flying
+				}
+				else { // not in deploying but ready to charge for next run
+					chargerPtr = nextAvailableCharger();
+					if (chargerPtr != NULL) { // One charger is available
+						newReqPtr->readEVTOLPtr()->setDeployStatus(IN_CHARGING);
+						newReqPtr->setReqStatus(ACTIVE_AND_CHARGING);
+						newReqPtr->clearChargeTime();
+						chargerPtr->setChargerMutex(IN_USE);
+						newReqPtr->setDCChargerPtr(chargerPtr);   // associate this charger to this Request
+						//newReqPtr->reqEVTOL and newReqPtr->company were already set in generateRequestList
+						*outfile << "ACTIVE_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " DCCharger = " << chargerPtr << " " << chargerPtr->readChargerName() << "\n";
+					}
+				}
+				break;
+
+			case ACTIVE_AND_CHARGING:
+				// Increment the chargeTime by one tick(one second) first, then compare
+				newReqPtr->incrementChargeTimeOneTick();
+				if (newReqPtr->readEVTOLPtr()->batteryChargeFull(newReqPtr->readChargeTime()) == true) {
+					*outfile << "ACTIVE_AND_CHARGING = " << newReqPtr << " " << newReqPtr->readCompanyName() << " chargeTime = " << newReqPtr->readChargeTime() << " seconds\n";
+					newReqPtr->setReqStatus(ACTIVE_CHARGED_REQ);
+				}
+				break;
+
+			case ACTIVE_CHARGED_REQ:
+			processVehicleReadyToDeploy:
+				// first time pre-charged, the associated DCCharger may be null
+				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) { // first time vehicle already charged
+					*outfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " pre-charged Ready to Fly\n";
+					newReqPtr->readEVTOLPtr()->setDeployStatus(IN_DEPLOY); // set it to interim status
+				}
+				else {
+					if (newReqPtr->readDCChargerPtr() != NULL) {
+						*outfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " " << " dcCharger = " << newReqPtr->readDCChargerPtr() << "\n";
+						// Now is time to record total time in-use and release associated Charger
+						newReqPtr->readDCChargerPtr()->addTotalCharingTime(newReqPtr->readChargeTime());
+						newReqPtr->readDCChargerPtr()->setChargerMutex(READY);
+					}
+				}
+				newReqPtr->setReqStatus(ACTIVE_FLYING_REQ);
+				break;
+
+			case ACTIVE_FLYING_REQ:
+				newReqPtr->incrementFlightTimeOneTick();
+				if (newReqPtr->readEVTOLPtr()->flyingTimeReached(newReqPtr->readFlyingTime()) == true) {
+					*outfile << "ACTIVE_FLYING_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " flyingTime = " << newReqPtr->readFlyingTime() << " seconds\n";
+					newReqPtr->setReqStatus(DONE_REQ);
+				}
+				break;
+
+			case DONE_REQ:  // Report this Request statistic
+
+				newReqPtr->setReqStatus(PROCESSED_REQ);
+				evtolReportPtr = eVTOLReports[newReqPtr->readCompany()];
+				evtolReportPtr->totalDoneReq++;
+				evtolReportPtr->company = newReqPtr->readCompany();
+				evtolReportPtr->totalChargeTime += newReqPtr->readChargeTime();
+				evtolReportPtr->totalFlyTime += newReqPtr->readFlyingTime();
+				evtolReportPtr->totalFlyMiles += newReqPtr->readFlyingTime() * newReqPtr->readEVTOLPtr()->readCruiseSpeedMilesPerHour() / MINUTES_PER_HOUR / SECONDS_PER_MINUTE;
+				localEVTOLPtr = newReqPtr->readEVTOLPtr();
+				evtolReportPtr->totalPassengerMiles += localEVTOLPtr->readCruiseSpeedMilesPerHour() * localEVTOLPtr->readMaxPassengers() * newReqPtr->readFlyingTime() / MINUTES_PER_HOUR / SECONDS_PER_MINUTE;
+				*outfile << "DONE_REQ newReqPtr " << newReqPtr << " evtolReportPtr " << evtolReportPtr << " totalDoneReqs " << evtolReportPtr->totalDoneReq << " " << newReqPtr->readCompanyName() << "\n";
+
+				// when this request is completed, set the vehicleReadyToDeploy NOT_READY
+				newReqPtr->readEVTOLPtr()->setDeployStatus(NOT_READY);
+				*outfile << newReqPtr->readCompanyName() << " is back to ready but not charged\n";
+				break;
+
+			case PROCESSED_REQ:
+				break;
+
+			default:
+				break;
+			}
+		}
+		sleep_until(system_clock::now() + 10ms);  // changed to 5ms per tick but simulate it as one second
+
+
+	}
+	*outfile << "JobAv eVTOL Simulation Done Tick = " << tick << "\n\n";
+	return 0;
+}
+
 int main()
 {
 	// Open a file
@@ -171,113 +282,17 @@ int main()
 	// generate the requesst list
 	generateRequestList();
 
-	// loop for every second till 3 hours simulation time
-	int tick;
-
-	class eVTOLReport *evtolReportPtr = NULL;
-	class eVTOLRequest *newReqPtr = NULL;
-	class DCFastCharger *chargerPtr = NULL;
-	class eVTOL *localEVTOLPtr = NULL;
-	for (tick = 0; tick < (SIMULATION_HOURS * MINUTES_PER_HOUR * SECONDS_PER_MINUTE); tick++) {
-
-		for (int i = 0; i < MAX_eVTOLs; i++) {
-			newReqPtr = &eVTOLReq[i];
-			switch (newReqPtr->readReqStatus()) {
-			case INACTIVE_REQ:
-				break;
-
-			case ACTIVE_REQ:
-				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) {
-					newReqPtr->setReqStatus(ACTIVE_CHARGED_REQ);
-					myfile << newReqPtr->readCompanyName() << " Precharged ready to fly\n";
-					goto processVehicleReadyToDeploy;
-				}
-				else if (newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_DEPLOY || newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_CHARGING) {  // do nothing if was in flying
-				}
-				else { // not in deploying but ready to charge for next run
-					chargerPtr = nextAvailableCharger();
-					if (chargerPtr != NULL) { // One charger is available
-						newReqPtr->readEVTOLPtr()->setDeployStatus(IN_CHARGING);
-						newReqPtr->setReqStatus(ACTIVE_AND_CHARGING);
-						newReqPtr->clearChargeTime();
-						chargerPtr->setChargerMutex(IN_USE);
-						newReqPtr->setDCChargerPtr(chargerPtr);   // associate this charger to this Request
-						//newReqPtr->reqEVTOL and newReqPtr->company were already set in generateRequestList
-						myfile << "ACTIVE_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " DCCharger = " << chargerPtr << " " << chargerPtr->readChargerName() << "\n";
-					}
-				}
-				break;
-
-			case ACTIVE_AND_CHARGING:
-				// Increment the chargeTime by one tick(one second) first, then compare
-				newReqPtr->incrementChargeTimeOneTick();
-				if (newReqPtr->readEVTOLPtr()->batteryChargeFull(newReqPtr->readChargeTime()) == true) {
-					myfile << "ACTIVE_AND_CHARGING = " << newReqPtr << " " << newReqPtr->readCompanyName() << " chargeTime = " << newReqPtr->readChargeTime() << " seconds\n";
-					newReqPtr->setReqStatus(ACTIVE_CHARGED_REQ);
-				}
-				break;
-
-			case ACTIVE_CHARGED_REQ:
-				processVehicleReadyToDeploy:
-			    // first time pre-charged, the associated DCCharger may be null
-				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) { // first time vehicle already charged
-					myfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " pre-charged Ready to Fly\n";
-					newReqPtr->readEVTOLPtr()->setDeployStatus(IN_DEPLOY); // set it to interim status
-				}
-				else {
-					if (newReqPtr->readDCChargerPtr() != NULL) {
-						myfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " " << " dcCharger = " << newReqPtr->readDCChargerPtr() << "\n";
-						// Now is time to record total time in-use and release associated Charger
-						newReqPtr->readDCChargerPtr()->addTotalCharingTime(newReqPtr->readChargeTime());
-						newReqPtr->readDCChargerPtr()->setChargerMutex(READY);
-					}
-				}
-				newReqPtr->setReqStatus(ACTIVE_FLYING_REQ);
-				break;
-
-			case ACTIVE_FLYING_REQ:
-				newReqPtr->incrementFlightTimeOneTick();
-				if (newReqPtr->readEVTOLPtr()->flyingTimeReached(newReqPtr->readFlyingTime()) == true) {
-					myfile << "ACTIVE_FLYING_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " flyingTime = " << newReqPtr->readFlyingTime() << " seconds\n";
-					newReqPtr->setReqStatus(DONE_REQ);
-				}
-				break;
-
-			case DONE_REQ:  // Report this Request statistic
-				
-				newReqPtr->setReqStatus(PROCESSED_REQ);
-				evtolReportPtr = eVTOLReports[newReqPtr->readCompany()];
-				evtolReportPtr->totalDoneReq++;
-				evtolReportPtr->company = newReqPtr->readCompany();
-				evtolReportPtr->totalChargeTime += newReqPtr->readChargeTime();
-				evtolReportPtr->totalFlyTime += newReqPtr->readFlyingTime();
-				evtolReportPtr->totalFlyMiles += newReqPtr->readFlyingTime() * newReqPtr->readEVTOLPtr()->readCruiseSpeedMilesPerHour() / MINUTES_PER_HOUR / SECONDS_PER_MINUTE;
-				localEVTOLPtr = newReqPtr->readEVTOLPtr();
-				evtolReportPtr->totalPassengerMiles += localEVTOLPtr->readCruiseSpeedMilesPerHour() * localEVTOLPtr->readMaxPassengers() * newReqPtr->readFlyingTime() / MINUTES_PER_HOUR / SECONDS_PER_MINUTE;
-				myfile << "DONE_REQ newReqPtr " << newReqPtr << " evtolReportPtr " << evtolReportPtr << " totalDoneReqs " << evtolReportPtr->totalDoneReq << " " << newReqPtr->readCompanyName() << "\n";
-				
-				// when this request is completed, set the vehicleReadyToDeploy NOT_READY
-				newReqPtr->readEVTOLPtr()->setDeployStatus(NOT_READY);
-			    myfile << newReqPtr->readCompanyName() << " is back to ready but not charged\n";				
-				break;
-
-			case PROCESSED_REQ:
-				break;
-
-			default:
-				break;
-			}
-		}
-		sleep_until(system_clock::now() + 10ms);  // changed to 5ms per tick but simulate it as one second
-		
-
+	// Evaluate each state machine and make the transition, return 0 means success.
+	if (evaluateStateTransistion(&myfile) == 0)
+	{
+		reportStatistic(&myfile);
+		std::cout << "JobAv eVTOL Simulation JobAvSimu.txt Done Successfully.\n";
 	}
+	else
+		std::cout << "JobAv eVTOL Simulation JobAvSimu.txt Done with Error!\n";
 
-	myfile << "JobAv eVTOL Simulation Done Tick = " << tick << "\n\n";
-
-	reportStatistic(&myfile);
-	
 	myfile.close();  // close this stream file
-	std::cout << "JobAv eVTOL Simulation JobAvSimu.txt Done Tick = " << tick << "\n";
+
+	// Exit 0 means success, the system reclaims the memory.
 	std::exit(0);
 }
