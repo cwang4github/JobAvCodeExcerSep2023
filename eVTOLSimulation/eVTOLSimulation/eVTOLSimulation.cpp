@@ -23,23 +23,24 @@
  *								 full and be fully charged before deploying.
  *								 Delete un-necessary comments.
  * 1.2			 Sep 24, 2023    Add in "evaluateStationTransion" routine in eVTOLSimulation.cpp
+ * 1.3			 Sep 25, 2023    Add in "TwoStreams.h" to write to cout and ostream simultaneously
  *								 
  */
 
 using namespace std;
-#include <fstream>
-#include <iostream>
-#include "DCFastCharger.h"
-#include "eVTOLClass.h"
-#include "FlightTicket.h"
-
 #include <chrono>
 #include <thread>
 #include <random>
 #include <ctime>
 #include <iomanip>
 #include <string>
-#include <map>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include "DCFastCharger.h"
+#include "eVTOLClass.h"
+#include "FlightTicket.h"
+#include "TwoStreams.h"
 
 using namespace std::this_thread;     // sleep_for, sleep_until
 using namespace std::chrono_literals; // ns, us, ms, s, h, etc.
@@ -68,6 +69,9 @@ class DCFastCharger DCFastChargerCruz(CRUZ_ID, (int)READY, "Cruz", 0);
 class DCFastCharger DCFastChargerMarina(MARINA_ID, (int)READY, "Marina", 0);
 class DCFastCharger DCFastChargerCarlos(CARLOS_ID, (int)READY, "Carlos", 0);
 class DCFastCharger *DCchargers[NUMBER_OF_CHARGER] = { &DCFastChargerCruz, &DCFastChargerMarina, &DCFastChargerCarlos };
+
+
+
 
 // Prepare 20 request ticket class array, with only 5 tickets( 5 companies VTOL ) is pre-charged and ready to fly.
 // Which company to choose is randomly selected by "rand()" function, however, one or more company vehicles could be not selected.
@@ -117,14 +121,13 @@ class DCFastCharger *nextAvailableCharger()
 	return NULL;
 }
 
-int reportStatistic(ofstream *outfile)
+int reportStatistic(TwoStreams *outfile)
 {
 	*outfile << "Vehicle - Flights - Average Flight Time - Average Distance Per Flight - Average Charging Time - Total Number of Faults - Total Number of Passenger Miles" << "\n";
 	class eVTOLReport* evtolReportPtr = NULL;
 	for (int i = 0; i < MAX_COMPANIES; i++) {
 		evtolReportPtr = eVTOLReports[i];
 		*outfile << "\n" << eVTOLs[evtolReportPtr->company]->readCompanyName() << "       ";
-
 
 		*outfile << evtolReportPtr->totalDoneReq << "        ";
 
@@ -156,7 +159,7 @@ int reportStatistic(ofstream *outfile)
 }
 
 
-int evaluateStateTransistion(ofstream *outfile)
+int evaluateStateTransistion(TwoStreams *outfile)
 {
 	// loop for every second till 3 hours simulation time
 	int tick;
@@ -266,18 +269,18 @@ int evaluateStateTransistion(ofstream *outfile)
 
 int main()
 {
-	// Open a file
-	ofstream myfile;
-	myfile.open("JobAvSimu.txt");
+	std::ofstream fileName;
 
-	// TODO -- merge both cout and myfile in one combo stream
+	fileName.open("JobAvSimu.txt");
+	// TwoStreams is a struct of two streams..one is fileName("JobAvSimu.txt") and one is cout.
+	TwoStreams myfile(fileName, std::cout);
+
 	myfile << "Start JobAv eVTOL Simulation\n";
 
 	// Declare and get now Date time
 	time_t t = time(0);   // get time now
-	struct tm * now = localtime(&t);
+	struct tm* now = localtime(&t);
 	myfile << "Date: " << (now->tm_mon + 1) << " " << now->tm_mday << " " << (now->tm_year + 1900) << " Time: " << now->tm_hour << ":" << now->tm_min << ":" << now->tm_sec << endl;
-	std::cout << "Date: " << (now->tm_mon + 1) << " " << now->tm_mday << " " << (now->tm_year + 1900) << " Time: " << now->tm_hour << ":" << now->tm_min << ":" << now->tm_sec << endl;
 
 	// generate the requesst list
 	generateRequestList();
@@ -286,13 +289,16 @@ int main()
 	if (evaluateStateTransistion(&myfile) == 0)
 	{
 		reportStatistic(&myfile);
-		std::cout << "JobAv eVTOL Simulation JobAvSimu.txt Done Successfully.\n";
+		myfile << "JobAv eVTOL Simulation JobAvSimu.txt Done Successfully.\n";
 	}
 	else
-		std::cout << "JobAv eVTOL Simulation JobAvSimu.txt Done with Error!\n";
+		myfile << "JobAv eVTOL Simulation JobAvSimu.txt Done with Error!\n";
 
-	myfile.close();  // close this stream file
+	//myfile.close();  // close this stream file
 
 	// Exit 0 means success, the system reclaims the memory.
 	std::exit(0);
 }
+
+
+
