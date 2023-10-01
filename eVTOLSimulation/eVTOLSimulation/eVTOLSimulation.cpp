@@ -24,10 +24,13 @@
  *								 Delete un-necessary comments.
  * 1.2			 Sep 24, 2023    Add in "evaluateStationTransion" routine in eVTOLSimulation.cpp
  * 1.3			 Sep 25, 2023    Add in "TwoStreams.h" to write to cout and ostream simultaneously
+ * 1.4           Oct 1,  2023    With "READY_TO_DEPLOY_AND_RESERVED" eVTOL state as the next state of "READY_TO_DEPLOY" 
  *								 
  */
 
-using namespace std;
+//using namespace std;
+#define __STDC_WANT_LIB_EXT1__1
+
 #include <chrono>
 #include <thread>
 #include <random>
@@ -37,6 +40,7 @@ using namespace std;
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <vector>
 #include "DCFastCharger.h"
 #include "eVTOLClass.h"
 #include "FlightTicket.h"
@@ -47,7 +51,7 @@ using namespace std::chrono_literals; // ns, us, ms, s, h, etc.
 using std::chrono::system_clock;
 
 //Following objs are declared at the beginning of the code as global variables as static storage, those storage goes away once the exit(0) statement at
-// the end of main() routine.
+// the end of main() routine. Class is declared and initialed by parameterized constructor.
 class eVTOL eVTOLAlpha(READY_TO_DEPLOY, ALPHA_COMPANY, "Alpha",        120, 320, 0.6f,  1.6f, 4, 0.25f);
 class eVTOL eVTOLBravo(READY_TO_DEPLOY, BRAVO_COMPANY, "Bravo",        100, 100, 0.2f,  1.5f, 5, 0.1f);
 class eVTOL eVTOLCharlie(READY_TO_DEPLOY, CHARLIE_COMPANY, "Charlie",  160, 220, 0.8f,  2.2f, 3, 0.05f);
@@ -55,6 +59,7 @@ class eVTOL eVTOLDelta(READY_TO_DEPLOY, DELTA_COMPANY, "Delta",         90, 120,
 class eVTOL eVTOLEcho(READY_TO_DEPLOY, ECHO_COMPANY, "Echo",            30, 150, 0.3f,  5.8f, 2, 0.61f);
 class eVTOL *eVTOLs[MAX_COMPANIES] = { &eVTOLAlpha, &eVTOLBravo, &eVTOLCharlie, &eVTOLDelta, &eVTOLEcho };
 
+// Class is declared and initialed by parameterized constructor.
 class eVTOLReport eVTOLReportAlpha(ALPHA_COMPANY, 0, 0, 0, 0, 0, 0);
 class eVTOLReport eVTOLReportBravo(BRAVO_COMPANY, 0, 0, 0, 0, 0, 0);
 class eVTOLReport eVTOLReportCharlie(CHARLIE_COMPANY, 0, 0, 0, 0, 0, 0);
@@ -62,8 +67,9 @@ class eVTOLReport eVTOLReportDelta(DELTA_COMPANY, 0, 0, 0, 0, 0, 0);
 class eVTOLReport eVTOLReportEcho(ECHO_COMPANY, 0, 0, 0, 0, 0, 0);
 class eVTOLReport* eVTOLReports[MAX_COMPANIES] = { &eVTOLReportAlpha , &eVTOLReportBravo, &eVTOLReportCharlie, &eVTOLReportDelta, &eVTOLReportEcho };
 
+// Initialized the declared eVTOLReq array by constructor.
 #define MAX_eVTOLs  20
-class eVTOLRequest eVTOLReq[MAX_eVTOLs];  // Maximum ready eVTOL's, initialized to NULL
+class eVTOLRequest eVTOLReq[MAX_eVTOLs];  // Initialed by constructor
 
 class DCFastCharger DCFastChargerCruz(CRUZ_ID, (int)READY, "Cruz", 0);
 class DCFastCharger DCFastChargerMarina(MARINA_ID, (int)READY, "Marina", 0);
@@ -71,10 +77,9 @@ class DCFastCharger DCFastChargerCarlos(CARLOS_ID, (int)READY, "Carlos", 0);
 class DCFastCharger *DCchargers[NUMBER_OF_CHARGER] = { &DCFastChargerCruz, &DCFastChargerMarina, &DCFastChargerCarlos };
 
 
-
-
 // Prepare 20 request ticket class array, with only 5 tickets( 5 companies VTOL ) is pre-charged and ready to fly.
 // Which company to choose is randomly selected by "rand()" function, however, one or more company vehicles could be not selected.
+// Total MAX_VTOLs entries are created, each enty is considered as AVTIVE_REQ and with eVTOL class pointer is associated.
 int generateRequestList()
 {
 
@@ -97,6 +102,7 @@ int generateRequestList()
 	return 0;
 }
 
+// Searching maximum created Request available, return the first available "ACTIVE_REQ" request.
 class eVTOLRequest *nextActiveReq()
 {
 	class eVTOLRequest *rp = eVTOLReq;
@@ -107,9 +113,7 @@ class eVTOLRequest *nextActiveReq()
 	return NULL;
 }
 
-
-
-
+// Searching dcCharger stations available, return the first available charger pointer.
 class DCFastCharger *nextAvailableCharger()
 {
 	class DCFastCharger *dcChargerPtr = NULL;
@@ -121,6 +125,7 @@ class DCFastCharger *nextAvailableCharger()
 	return NULL;
 }
 
+// Report the statistic data once the SIMULATION_HOURS reach.
 int reportStatistic(TwoStreams *outfile)
 {
 	*outfile << "Vehicle - Flights - Average Flight Time - Average Distance Per Flight - Average Charging Time - Total Number of Faults - Total Number of Passenger Miles" << "\n";
@@ -159,6 +164,10 @@ int reportStatistic(TwoStreams *outfile)
 }
 
 
+// State machine of the Request ticket.  Such state machine is evaluated every 10ms per tick by calling "sleep_until(system_clock::now() + 10ms)" for total of SIMULATION_HOURSshal.
+// Each tick shall go through the whole Request tickts already allocated.
+// Each Request ticket's associated eVTOL's status is also in consideration, and if eVTOL is ready_to_deploy then proceed to "ACTIVED_CHARGED_REQ", and modify eVTOL to "IN_FLIGHT" status.
+// 
 int evaluateStateTransistion(TwoStreams *outfile)
 {
 	// loop for every second till 3 hours simulation time
@@ -172,20 +181,20 @@ int evaluateStateTransistion(TwoStreams *outfile)
 
 		for (int i = 0; i < MAX_eVTOLs; i++) {
 			newReqPtr = &eVTOLReq[i];
-			switch (newReqPtr->readReqStatus()) {
+			switch (newReqPtr->readReqStatus() % MAX_REQS) {  // make sure the ReqStatus falls within MAX_REQS range.
 			case INACTIVE_REQ:
 				break;
 
 			case ACTIVE_REQ:
 				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) {
+					newReqPtr->readEVTOLPtr()->setDeployStatus(READY_TO_DEPLOY_AND_RESERVED);
 					newReqPtr->setReqStatus(ACTIVE_CHARGED_REQ);
 					*outfile << newReqPtr->readCompanyName() << " Precharged ready to fly\n";
-					// When vehicle is charged, go to ACTIVE_CHARGED_REQ state immediately.
-					goto processVehicleReadyToDeploy;
 				}
-				else if (newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_DEPLOY || newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_CHARGING) {  // do nothing if was in flying
+				else if (newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_DEPLOY || newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_CHARGING
+						|| newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY_AND_RESERVED) {  // do nothing if was in flying
 				}
-				else { // not in deploying but ready to charge for next run
+				else { // not in deploying but ready to charge for next run, the NOT_READY state
 					chargerPtr = nextAvailableCharger();
 					if (chargerPtr != NULL) { // One charger is available
 						newReqPtr->readEVTOLPtr()->setDeployStatus(IN_CHARGING);
@@ -209,20 +218,20 @@ int evaluateStateTransistion(TwoStreams *outfile)
 				break;
 
 			case ACTIVE_CHARGED_REQ:
-			processVehicleReadyToDeploy:
 				// first time pre-charged, the associated DCCharger may be null
-				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY) { // first time vehicle already charged
+				if (newReqPtr->readEVTOLPtr()->readDeployStatus() == READY_TO_DEPLOY_AND_RESERVED) { // first time vehicle already charged
 					*outfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " pre-charged Ready to Fly\n";
-					newReqPtr->readEVTOLPtr()->setDeployStatus(IN_DEPLOY); // set it to interim status
 				}
 				else {
-					if (newReqPtr->readDCChargerPtr() != NULL) {
+					// This eVTOL is fully charged, accumulates the charging time for release this Charger.
+					if (newReqPtr->readDCChargerPtr() != NULL && newReqPtr->readEVTOLPtr()->readDeployStatus() == IN_CHARGING) {
 						*outfile << "ACTIVE_CHARGED_REQ = " << newReqPtr << " " << newReqPtr->readCompanyName() << " " << " dcCharger = " << newReqPtr->readDCChargerPtr() << "\n";
 						// Now is time to record total time in-use and release associated Charger
 						newReqPtr->readDCChargerPtr()->addTotalCharingTime(newReqPtr->readChargeTime());
 						newReqPtr->readDCChargerPtr()->setChargerMutex(READY);
 					}
 				}
+				newReqPtr->readEVTOLPtr()->setDeployStatus(IN_DEPLOY); // set it to interim status
 				newReqPtr->setReqStatus(ACTIVE_FLYING_REQ);
 				break;
 
@@ -268,6 +277,7 @@ int evaluateStateTransistion(TwoStreams *outfile)
 }
 
 int main()
+
 {
 	std::ofstream fileName;
 
@@ -280,10 +290,10 @@ int main()
 	// Declare and get now Date time
 	time_t t = time(0);   // get time now
 	struct tm* now = localtime(&t);
-	myfile << "Date: " << (now->tm_mon + 1) << " " << now->tm_mday << " " << (now->tm_year + 1900) << " Time: " << now->tm_hour << ":" << now->tm_min << ":" << now->tm_sec << endl;
+	myfile << "Date: " << (now->tm_mon + 1) << " " << now->tm_mday << " " << (now->tm_year + 1900) << " Time: " << now->tm_hour << ":" << now->tm_min << ":" << now->tm_sec << "\n";
 
 	// generate the requesst list
-	generateRequestList();
+	myfile << "Request list generation " << ((generateRequestList() == 0) ? "success\n" : "fail\n");
 
 	// Evaluate each state machine and make the transition, return 0 means success.
 	if (evaluateStateTransistion(&myfile) == 0)
@@ -294,7 +304,7 @@ int main()
 	else
 		myfile << "JobAv eVTOL Simulation JobAvSimu.txt Done with Error!\n";
 
-	//myfile.close();  // close this stream file
+	fileName.close();  // close this stream file
 
 	// Exit 0 means success, the system reclaims the memory.
 	std::exit(0);

@@ -17,10 +17,10 @@ public:
 	int readChargerMutex() { return chargerMutex;  }
 	void setChargerMutex(int value) { chargerMutex = value;  }
 	int readChargerID() { return chargerID; }
-	string readChargerName() { return name; }
+	std::string readChargerName() { return name; }
 	void addTotalCharingTime(int chargingTime) { totalChargingTime += chargingTime;  }
 
-	DCFastCharger(int chgID, int mutex, string sname, int chargeTime) {
+	DCFastCharger(int chgID, int mutex, std::string sname, int chargeTime) {
 		chargerMutex = mutex;
 		chargerID = chgID;
 		name = sname;
@@ -30,7 +30,7 @@ public:
 private:
 	int chargerID;
 	int chargerMutex;
-	string name;
+	std::string name;
 	int totalChargingTime;   // how much time this charger in-use
 
 
