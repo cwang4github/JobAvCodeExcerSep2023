@@ -9,10 +9,10 @@
  *				 2.  ACTIVE_REQ: active request but also need to check associated eVTOL's "vehicleReadyToDeploy" status to determine whether to advance
  *                   to "ACTIVE_AND_CHARGING" if charger is available
  *				 3.  ACTIVE_AND_CHARGING: vehicle is in charging, only to exit to "ACTIVE_CHARGED_REQ" when battery fully charged
- *				 4.  ACTIVE_CHARGED_REQ: interim state if this vehicle is pre-charged or just finised charging, exit to "ACTIVE_FLYING_REQ"
+ *				 4.  ACTIVE_CHARGED_REQ: interim state if this vehicle is pre-charged or just finished charging, exit to "ACTIVE_FLYING_REQ"
  *				 5.  ACTIVE_FLYING_REQ: vehicle is in flying, only to exit to "DONE_REQ" when flight time expires
  *				 6.  DONE_REQ:  this Request ticket marked as DONE_REQ and accumulated the data to REPORT class, 
- *					 and it's associated eVTOL vechile's "vehicleReadyToDeploy" as "NOT_READY". This request ticket would not back to active again.			 
+ *					 and it's associated eVTOL vehicle's "vehicleReadyToDeploy" as "NOT_READY". This request ticket would not back to active again.			 
  *               
  * Revision:     Date:           Reason												                     Author
  * 1.0           Sep 16, 2023    Original											                     Chris Wang
@@ -25,6 +25,7 @@
  * 1.2			 Sep 24, 2023    Add in "evaluateStationTransion" routine in eVTOLSimulation.cpp
  * 1.3			 Sep 25, 2023    Add in "TwoStreams.h" to write to cout and ostream simultaneously
  * 1.4           Oct 1,  2023    With "READY_TO_DEPLOY_AND_RESERVED" eVTOL state as the next state of "READY_TO_DEPLOY" 
+ *				 Oct 2, 2023     Add in comments
  *								 
  */
 
@@ -308,6 +309,7 @@ int main()
 
 	// Exit 0 means success, the system reclaims the memory.
 	std::exit(0);
+	return 0;
 }
 
 
